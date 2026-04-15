@@ -1,0 +1,36 @@
+{
+  "name": "telegram-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for Telegram Bot API with stdio and HTTP transports",
+  "type": "module",
+  "main": "dist/server.js",
+  "bin": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "prepack": "tsc",
+    "clean": "rm -rf dist/",
+    "lint": "eslint src/",
+    "start": "node dist/server.js",
+    "start:http": "node dist/server.js --http",
+    "client:install": "cd client && npm install",
+    "client:build": "cd client && npm run build",
+    "client:lint": "cd client && npm run lint",
+    "client:start": "cd client && node build/main.js",
+    "client:start:http": "cd client && node build/main.js --http"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "express": "^5.1.0",
+    "grammy": "^1.42.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.28.0",
+    "@tsconfig/recommended": "^1.0.8",
+    "@types/express": "^5.0.2",
+    "@types/node": "^22.15.21",
+    "eslint": "^9.28.0",
+    "eslint-plugin-check-file": "^3.1.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.33.0"
+  }
+}
