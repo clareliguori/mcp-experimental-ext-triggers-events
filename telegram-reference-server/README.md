@@ -1,6 +1,6 @@
 # Telegram MCP Server
 
-MCP server that exposes Telegram Bot API operations as tools. Supports stdio and HTTP transports.
+MCP server that exposes Telegram Bot API operations as tools and inbound Telegram messages as MCP Events (push delivery). Supports stdio and HTTP transports.
 
 ## Setup
 
@@ -28,7 +28,7 @@ First, set `TELEGRAM_BOT_TOKEN` in an `.env` file:
 echo "TELEGRAM_BOT_TOKEN=123456789:AAHfiqksKZ8..." > .env
 ```
 
-You can also set the `TELEGRAM_BOT_TOKEN` env var in your environment.
+The server and client both auto-load `.env` from the working directory (the client also checks the parent directory). You can also set the env var directly.
 
 ### Start stdio server (default)
 
@@ -81,9 +81,22 @@ node dist/server.js --http
 | `download_attachment` | Download a file attachment, returns URL |
 | `edit_message` | Edit a previously sent message |
 
+## Events
+
+The server implements the MCP Events design sketch proposal with push delivery. Grammy polls Telegram for inbound messages and pushes them to subscribed clients.
+
+| Event | Delivery | Description |
+|-------|----------|-------------|
+| `telegram.message` | push | Fires when the bot receives a text, photo, or document message |
+
+Clients subscribe via `events/stream`. The server confirms with `notifications/events/active` and delivers events as `notifications/events/event` notifications.
+
 ## Client (Strands Agents SDK)
 
-A minimal interactive chatbot that connects to the server via stdio and routes tool calls through a Bedrock-hosted LLM.
+A minimal interactive chatbot that connects to the server, subscribes to Telegram events, and routes both terminal input and inbound Telegram messages through a Bedrock-hosted LLM agent.
+
+- Terminal messages get a direct text response
+- Telegram messages are automatically queued and fed into the agent loop; the agent uses the `reply` tool to respond in the Telegram chat
 
 ```bash
 npm run client:install && npm run client:build
