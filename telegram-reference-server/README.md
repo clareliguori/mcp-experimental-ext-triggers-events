@@ -2,6 +2,38 @@
 
 MCP server that exposes Telegram Bot API operations as tools and inbound Telegram messages as MCP Events (push, poll, and webhook delivery). Supports stdio and HTTP transports.
 
+### Sample interaction
+
+The client is an interactive chatbot. You can chat directly in the terminal:
+
+```
+You: What time is it in New York?
+Assistant:
+🔧 Tool #1: get_current_time
+✓ Tool completed
+It's currently **11:45 AM** on **Thursday, April 16, 2026** in New York. 🗽
+```
+
+When someone messages the Telegram bot, the same agent sees it and replies in Telegram using its `reply` tool:
+
+In Telegram:
+```
+To bot: What time is it in Seattle?
+From bot: It's currently 8:45 AM on Thursday, April 16, 2026 in Seattle! 🌲
+```
+
+In the agent:
+```
+📨 [Telegram event] Message from user 1234 in chat_id 5678 (message_id 24): What time is it in Seattle?
+
+Assistant:
+🔧 Tool #1: get_current_time
+✓ Tool completed
+🔧 Tool #2: reply
+✓ Tool completed
+Replied to the Telegram user! It's **8:45 AM** in Seattle.
+```
+
 ## Setup
 
 ### 1. Create a bot with BotFather
