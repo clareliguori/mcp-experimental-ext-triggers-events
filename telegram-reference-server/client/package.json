@@ -12,9 +12,11 @@
     "start": "node build/main.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
     "@aws-sdk/client-bedrock-runtime": "^3.1027.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "@strands-agents/sdk": "^0.7.0"
+    "@strands-agents/sdk": "^1.0.0-rc.3",
+    "openai": "^6.34.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.28.0",

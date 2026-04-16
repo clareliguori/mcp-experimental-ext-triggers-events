@@ -3,6 +3,9 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Agent, BedrockModel, McpClient } from "@strands-agents/sdk";
+import { AnthropicModel } from "@strands-agents/sdk/models/anthropic";
+import { OpenAIModel } from "@strands-agents/sdk/models/openai";
+import type { Model } from "@strands-agents/sdk";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
@@ -243,9 +246,29 @@ async function main(): Promise<void> {
       });
   }
 
-  const model = new BedrockModel({
-    modelId: "us.anthropic.claude-sonnet-4-20250514-v1:0",
-  });
+  const provider = process.env.MODEL_PROVIDER ?? "bedrock";
+  let model: Model;
+  switch (provider) {
+    case "anthropic":
+      model = new AnthropicModel({
+        modelId: process.env.MODEL_ID ?? "claude-sonnet-4-6",
+      });
+      console.log(`Using Anthropic (${(model as AnthropicModel).getConfig().modelId})`);
+      break;
+    case "openai":
+      model = new OpenAIModel({
+        api: "chat",
+        modelId: process.env.MODEL_ID ?? "gpt-5.4",
+      });
+      console.log(`Using OpenAI (${(model as OpenAIModel).getConfig().modelId})`);
+      break;
+    default:
+      model = new BedrockModel({
+        modelId: process.env.MODEL_ID ?? "global.anthropic.claude-sonnet-4-6",
+      });
+      console.log(`Using Bedrock (${(model as BedrockModel).getConfig().modelId})`);
+      break;
+  }
 
   const agent = new Agent({
     model,

@@ -101,7 +101,7 @@ For webhook delivery, clients call `events/subscribe` with a callback URL. The s
 
 ## Client (Strands Agents SDK)
 
-A minimal interactive chatbot that connects to the server, subscribes to Telegram events, and routes both terminal input and inbound Telegram messages through a Bedrock-hosted LLM agent.
+A minimal interactive chatbot that connects to the server, subscribes to Telegram events, and routes both terminal input and inbound Telegram messages through an LLM agent.
 
 - Terminal messages get a direct text response
 - Telegram messages are automatically queued and fed into the agent loop; the agent uses the `reply` tool to respond in the Telegram chat
@@ -109,6 +109,23 @@ A minimal interactive chatbot that connects to the server, subscribes to Telegra
 ```bash
 npm run client:install && npm run client:build
 ```
+
+### Model provider
+
+Set `MODEL_PROVIDER` to choose the LLM backend. Override the model with `MODEL_ID`.
+
+| `MODEL_PROVIDER` | Default `MODEL_ID` | Credentials needed |
+|---|---|---|
+| `bedrock` (default) | `global.anthropic.claude-sonnet-4-6` | AWS credentials |
+| `anthropic` | `claude-sonnet-4-6` | `ANTHROPIC_API_KEY` |
+| `openai` | `gpt-5.4` | `OPENAI_API_KEY` |
+
+Example:
+```bash
+MODEL_PROVIDER=anthropic ANTHROPIC_API_KEY=sk-ant-... npm run client:start
+```
+
+### Transport × delivery matrix
 
 | | push (default) | poll (`--poll`) | webhook (`--webhook`) |
 |---|---|---|---|
@@ -145,8 +162,6 @@ Or with poll delivery:
 ```bash
 npm run client:start:http:poll
 ```
-
-Requires AWS credentials configured for Bedrock access.
 
 ## Notes
 
