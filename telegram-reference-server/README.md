@@ -2,9 +2,14 @@
 
 MCP server that exposes Telegram Bot API operations as tools and inbound Telegram messages as MCP Events (push, poll, and webhook delivery). Supports stdio and HTTP transports.
 
+This is meant as a proof of concept for the
+[MCP Events design sketch proposal](https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/pja/design-sketch/docs/design-sketch-proposal.md).
+
 ### Sample interaction
 
-The client is an interactive chatbot. You can chat directly in the terminal:
+The sample client is an interactive chatbot that uses this Telegram MCP server and the [`time` MCP server](https://pypi.org/project/mcp-server-time/).
+
+You can chat directly with the agent in the terminal:
 
 ```
 You: What time is it in New York?
@@ -121,9 +126,7 @@ npm run start:http
 
 ## Events
 
-The server implements the
-[MCP Events design sketch proposal](https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/pja/design-sketch/docs/design-sketch-proposal.md)
-with push, poll, and webhook delivery.
+The server implements push, poll, and webhook delivery.
 Grammy polls Telegram for inbound messages and delivers them to subscribed clients.
 
 | Event | Delivery | Description |
@@ -299,3 +302,7 @@ npm run client:start:http:webhook
 - Telegram's Bot API exposes **no message history or search**. The bot only sees messages as they arrive. If you need earlier context, ask the user to paste or summarize.
 - Telegram only accepts a [fixed whitelist of emoji](https://core.telegram.org/bots/api#reactiontypeemoji) for reactions — non-whitelisted emoji will be rejected.
 - Telegram caps bot file downloads at 20MB.
+
+## Acknowledgements
+
+Inspired by the Telegram plugin in [anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official) (Apache-2.0).
