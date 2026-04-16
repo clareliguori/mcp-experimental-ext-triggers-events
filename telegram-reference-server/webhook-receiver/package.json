@@ -1,0 +1,22 @@
+{
+  "name": "telegram-webhook-receiver",
+  "version": "1.0.0",
+  "description": "Standalone webhook receiver that stores HMAC-signed events in SQLite",
+  "type": "module",
+  "main": "dist/webhookReceiver.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/webhookReceiver.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.9.0",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@tsconfig/recommended": "^1.0.8",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.2",
+    "@types/node": "^22.15.21",
+    "typescript": "^5.8.3"
+  }
+}

@@ -10,6 +10,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { Notification } from "@modelcontextprotocol/sdk/types.js";
+import Database from "better-sqlite3";
 import { z } from "zod";
 
 // Load .env from current dir or parent dir
@@ -65,7 +66,7 @@ async function main(): Promise<void> {
     }
     transport = new StdioClientTransport({
       command: "node",
-      args: ["../dist/server.js"],
+      args: ["./dist/server.js"],
       env: { ...process.env, TELEGRAM_BOT_TOKEN: token },
     });
   }
@@ -209,6 +210,49 @@ async function main(): Promise<void> {
     process.on("beforeExit", () => {
       refreshing = false;
     });
+
+    // Poll SQLite for events inserted by the webhook receiver
+    const dbPath = process.env.WEBHOOK_DB ?? "./webhooks.db";
+    const db = new Database(dbPath, { readonly: true, fileMustExist: false });
+    // Ensure table exists (receiver may not have started yet)
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          event_id TEXT UNIQUE,
+          payload TEXT NOT NULL,
+          created_at INTEGER DEFAULT (unixepoch())
+        )
+      `);
+    } catch {
+      /* readonly mode — table will exist once receiver starts */
+    }
+    let lastId = 0;
+    const query = db.prepare(
+      "SELECT id, payload FROM events WHERE id > ? ORDER BY id LIMIT 50"
+    );
+
+    (async () => {
+      while (refreshing) {
+        try {
+          const rows = query.all(lastId) as { id: number; payload: string }[];
+          for (const row of rows) {
+            lastId = row.id;
+            const evt = JSON.parse(row.payload);
+            const data = evt.data as Record<string, unknown>;
+            const msg = formatEvent(data);
+            console.log(`\n📨 ${msg}`);
+            enqueueMessage(msg);
+          }
+          if (rows.length > 0) {
+            console.error(`[webhook] Polled ${rows.length} events from DB`);
+          }
+        } catch {
+          /* DB may not exist yet */
+        }
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    })();
   } else {
     // ── Push-based delivery ──────────────────────────────────────────
     console.log("📡 Using push-based event delivery\n");

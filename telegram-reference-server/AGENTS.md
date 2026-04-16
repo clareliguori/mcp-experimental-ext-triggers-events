@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Telegram MCP Server — exposes Telegram Bot API operations as MCP tools and inbound Telegram messages as MCP Events (push and poll delivery). Supports dual transport: stdio (default) and Streamable HTTP (`--http` flag). Uses Grammy for Telegram Bot API interactions. Includes a minimal chatbot client using Strands Agents SDK.
+Telegram MCP Server — exposes Telegram Bot API operations as MCP tools and inbound Telegram messages as MCP Events (push, poll, and webhook delivery). Supports dual transport: stdio (default) and Streamable HTTP (`--http` flag). Uses Grammy for Telegram Bot API interactions. Includes a minimal chatbot client using Strands Agents SDK.
 
 ## Key Folders
 
@@ -10,6 +10,7 @@ Telegram MCP Server — exposes Telegram Bot API operations as MCP tools and inb
 - `dist/` — Compiled JS output (gitignored).
 - `client/` — Minimal chatbot client using Strands Agents SDK + Bedrock.
 - `client/src/main.ts` — REPL that connects to the server via stdio or HTTP and exposes tools to an LLM agent.
+- `webhook-receiver/` — Standalone express server that receives HMAC-signed webhook POSTs and stores events in SQLite.
 
 ## Architecture
 
@@ -31,9 +32,10 @@ Telegram MCP Server — exposes Telegram Bot API operations as MCP tools and inb
 - Custom notification methods (`notifications/events/*`) are sent via `extra.sendNotification()` with type casting since the SDK doesn't have native events support yet.
 
 ### Client
-- Uses `@strands-agents/sdk` `Agent` with `BedrockModel` (Claude Sonnet) and `McpClient`.
+- Uses `@strands-agents/sdk` `Agent` with `BedrockModel` (default), `AnthropicModel`, or `OpenAIModel` via `MODEL_PROVIDER` env var.
 - Supports stdio (default, spawns server) and HTTP (`--http`, connects to running server).
 - Supports push (`events/stream`, default), poll (`events/poll`, `--poll`), and webhook (`events/subscribe`, `--webhook`) delivery.
+- Webhook mode polls a SQLite database (`WEBHOOK_DB`) for events inserted by the standalone webhook receiver.
 - Incoming Telegram messages are queued and fed into the agent loop on the next turn.
 - Terminal input and Telegram events are distinguished by a `[Telegram event]` prefix so the agent responds appropriately (direct text vs `reply` tool).
 - Interactive async REPL loop with Node `readline`.
@@ -47,8 +49,8 @@ Telegram MCP Server — exposes Telegram Bot API operations as MCP tools and inb
 ```bash
 # Setup: create .env with TELEGRAM_BOT_TOKEN=<token>
 
-# Server — install, build, lint, run
-npm install && npm run build && npm run lint
+# Install and build everything
+npm run install:all && npm run build:all
 npm start                    # stdio
 npm run start:http           # HTTP on port 3000
 
@@ -60,4 +62,5 @@ npm run client:start:webhook # stdio + webhook delivery (set WEBHOOK_URL)
 npm run client:start:http    # HTTP (connect to running server)
 npm run client:start:http:poll  # HTTP + poll delivery
 npm run client:start:http:webhook # HTTP + webhook delivery
+npm run webhook-receiver   # standalone webhook receiver
 ```

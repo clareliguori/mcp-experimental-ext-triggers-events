@@ -16,8 +16,7 @@ BotFather replies with a token like `123456789:AAHfiqksKZ8...` — copy the whol
 ### 2. Install and build
 
 ```bash
-npm install
-npm run build
+npm run install:all && npm run build:all
 ```
 
 ## Usage
@@ -95,6 +94,68 @@ The server implements the MCP Events design sketch proposal with push delivery. 
 |-------|----------|-------------|
 | `telegram.message` | push, poll | Fires when the bot receives a text, photo, or document message |
 
+### Push delivery
+
+Client opens a long-lived `events/stream` request. Events are delivered as notifications on the same connection.
+
+```mermaid
+sequenceDiagram
+    participant TG as Telegram
+    participant S as MCP Server
+    participant C as Client
+
+    C->>S: events/stream {subscriptions}
+    S-->>C: notifications/events/active
+    loop as messages arrive
+        TG->>S: message (Grammy polling)
+        S-->>C: notifications/events/event
+    end
+```
+
+### Poll delivery
+
+Client calls `events/poll` at the server-recommended interval. No persistent connection needed.
+
+```mermaid
+sequenceDiagram
+    participant TG as Telegram
+    participant S as MCP Server
+    participant C as Client
+
+    loop every nextPollSeconds
+        C->>S: events/poll {subscriptions, cursors}
+        S-->>C: {results: [{events, cursor}]}
+    end
+    Note over TG,S: Grammy buffers messages<br/>in a ring buffer between polls
+```
+
+### Webhook delivery
+
+Server POSTs HMAC-signed events to a callback URL. A standalone webhook receiver stores them in SQLite; the client polls the database.
+
+```mermaid
+sequenceDiagram
+    participant TG as Telegram
+    participant S as MCP Server
+    participant W as Webhook Receiver
+    participant DB as SQLite
+    participant C as Client
+
+    C->>S: events/subscribe {delivery: {url}}
+    S-->>C: {secret, refreshBefore}
+    loop as messages arrive
+        TG->>S: message (Grammy polling)
+        S->>W: POST + HMAC signature
+        W->>DB: INSERT event
+    end
+    loop every 2s
+        C->>DB: SELECT WHERE id > cursor
+        DB-->>C: new events
+    end
+```
+
+### Subscription
+
 Clients subscribe via `events/stream` (push) or `events/poll` (poll). The server confirms push subscriptions with `notifications/events/active` and delivers events as `notifications/events/event` notifications. Poll clients call `events/poll` at the server-recommended interval.
 
 For webhook delivery, clients call `events/subscribe` with a callback URL. The server POSTs events with HMAC-SHA256 signatures (`X-MCP-Signature`, `X-MCP-Timestamp` headers). Subscriptions have a 1-minute TTL (for demo; set longer for production) and must be refreshed before `refreshBefore`.
@@ -161,6 +222,42 @@ npm run client:start:http
 Or with poll delivery:
 ```bash
 npm run client:start:http:poll
+```
+
+### Webhook delivery
+
+Webhook mode uses three processes to simulate a production architecture:
+
+1. **MCP server** — POSTs HMAC-signed events to the webhook URL
+2. **Webhook receiver** — express app that verifies signatures and stores events in SQLite
+3. **Client** — polls the SQLite database for new events and feeds them to the agent
+
+The webhook receiver and client share a SQLite database for storing and receiving incoming messages.
+In production, this could be a message queue or database (e.g., Amazon SQS, Kafka, Redis, PostgreSQL).
+
+Start the webhook receiver (in its own terminal):
+```bash
+npm run webhook-receiver:start
+# Listens on http://localhost:8080/hooks by default (set WEBHOOK_PORT to change)
+```
+
+Then start the client with webhook delivery:
+```bash
+npm run client:start:webhook
+# Set WEBHOOK_URL (default http://localhost:8080/hooks)
+# Set WEBHOOK_DB to share the same SQLite path (default ./webhooks.db)
+```
+
+For HTTP transport with webhook delivery, start all three separately:
+```bash
+# Terminal 1: MCP server
+node dist/server.js --http
+
+# Terminal 2: webhook receiver
+npm run webhook-receiver:start
+
+# Terminal 3: client
+npm run client:start:http:webhook
 ```
 
 ## Notes
