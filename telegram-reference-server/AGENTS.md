@@ -8,7 +8,7 @@ Telegram MCP Server — exposes Telegram Bot API operations as MCP tools and inb
 
 - `src/` — TypeScript source. Single-file server at `src/server.ts`.
 - `dist/` — Compiled JS output (gitignored).
-- `client/` — Minimal chatbot client using Strands Agents SDK + Bedrock.
+- `client/` — Minimal chatbot client using Strands Agents SDK.
 - `client/src/main.ts` — REPL that connects to the server via stdio or HTTP and exposes tools to an LLM agent.
 - `webhook-receiver/` — Standalone express server that receives HMAC-signed webhook POSTs and stores events in SQLite.
 
@@ -62,5 +62,5 @@ npm run client:start:webhook # stdio + webhook delivery (set WEBHOOK_URL)
 npm run client:start:http    # HTTP (connect to running server)
 npm run client:start:http:poll  # HTTP + poll delivery
 npm run client:start:http:webhook # HTTP + webhook delivery
-npm run webhook-receiver   # standalone webhook receiver
+npm run webhook-receiver:start   # standalone webhook receiver
 ```

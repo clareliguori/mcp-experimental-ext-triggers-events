@@ -1,6 +1,6 @@
 # Telegram MCP Server
 
-MCP server that exposes Telegram Bot API operations as tools and inbound Telegram messages as MCP Events (push and poll delivery). Supports stdio and HTTP transports.
+MCP server that exposes Telegram Bot API operations as tools and inbound Telegram messages as MCP Events (push, poll, and webhook delivery). Supports stdio and HTTP transports.
 
 ## Setup
 
@@ -11,7 +11,7 @@ Open a chat with [@BotFather](https://t.me/BotFather) on Telegram and send `/new
 - **Name** — display name shown in chat headers (anything, can contain spaces)
 - **Username** — unique handle ending in `bot` (e.g. `my_assistant_bot`)
 
-BotFather replies with a token like `123456789:AAHfiqksKZ8...` — copy the whole thing including the leading number and colon.
+BotFather replies with a token like `123456789:AAHfiqksKZ8...`.
 
 ### 2. Install and build
 
@@ -34,7 +34,7 @@ echo "WEBHOOK_URL=http://localhost:8080/hooks" >> .env
 echo "WEBHOOK_SECRET=$(openssl rand -base64 32)" >> .env
 ```
 
-The server and client both auto-load `.env` from the working directory (the client also checks the parent directory). You can also set the env var directly.
+The server and client both auto-load the `.env` file. You can also set the env vars directly.
 
 ### Start stdio server (default)
 
@@ -89,11 +89,14 @@ node dist/server.js --http
 
 ## Events
 
-The server implements the MCP Events design sketch proposal with push delivery. Grammy polls Telegram for inbound messages and pushes them to subscribed clients.
+The server implements the
+[MCP Events design sketch proposal](https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/pja/design-sketch/docs/design-sketch-proposal.md)
+with push, poll, and webhook delivery.
+Grammy polls Telegram for inbound messages and delivers them to subscribed clients.
 
 | Event | Delivery | Description |
 |-------|----------|-------------|
-| `telegram.message` | push, poll | Fires when the bot receives a text, photo, or document message |
+| `telegram.message` | push, poll, webhook | Fires when the bot receives a text, photo, or document message |
 
 ### Push delivery
 
@@ -168,10 +171,6 @@ A minimal interactive chatbot that connects to the server, subscribes to Telegra
 - Terminal messages get a direct text response
 - Telegram messages are automatically queued and fed into the agent loop; the agent uses the `reply` tool to respond in the Telegram chat
 
-```bash
-npm run client:install && npm run client:build
-```
-
 ### Model provider
 
 Set `MODEL_PROVIDER` to choose the LLM backend. Override the model with `MODEL_ID`.
@@ -189,12 +188,12 @@ MODEL_PROVIDER=anthropic ANTHROPIC_API_KEY=sk-ant-... npm run client:start
 
 ### Transport × delivery matrix
 
-| | push (default) | poll (`--poll`) | webhook (`--webhook`) |
+| | push (default) | poll | webhook |
 |---|---|---|---|
 | **stdio** (default) | `npm run client:start` | `npm run client:start:poll` | `npm run client:start:webhook` |
 | **HTTP** (`--http`) | `npm run client:start:http` | `npm run client:start:http:poll` | `npm run client:start:http:webhook` |
 
-### stdio (default — spawns the server automatically)
+### stdio (default — client spawns the server automatically)
 
 ```bash
 npm run client:start
