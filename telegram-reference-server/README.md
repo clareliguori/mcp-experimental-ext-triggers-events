@@ -1,6 +1,6 @@
 # Telegram MCP Server
 
-MCP server that exposes Telegram Bot API operations as tools and inbound Telegram messages as MCP Events (push delivery). Supports stdio and HTTP transports.
+MCP server that exposes Telegram Bot API operations as tools and inbound Telegram messages as MCP Events (push and poll delivery). Supports stdio and HTTP transports.
 
 ## Setup
 
@@ -87,9 +87,9 @@ The server implements the MCP Events design sketch proposal with push delivery. 
 
 | Event | Delivery | Description |
 |-------|----------|-------------|
-| `telegram.message` | push | Fires when the bot receives a text, photo, or document message |
+| `telegram.message` | push, poll | Fires when the bot receives a text, photo, or document message |
 
-Clients subscribe via `events/stream`. The server confirms with `notifications/events/active` and delivers events as `notifications/events/event` notifications.
+Clients subscribe via `events/stream` (push) or `events/poll` (poll). The server confirms push subscriptions with `notifications/events/active` and delivers events as `notifications/events/event` notifications. Poll clients call `events/poll` at the server-recommended interval.
 
 ## Client (Strands Agents SDK)
 
@@ -102,10 +102,21 @@ A minimal interactive chatbot that connects to the server, subscribes to Telegra
 npm run client:install && npm run client:build
 ```
 
+| | push (default) | poll (`--poll`) |
+|---|---|---|
+| **stdio** (default) | `npm run client:start` | `npm run client:start:poll` |
+| **HTTP** (`--http`) | `npm run client:start:http` | `npm run client:start:http:poll` |
+
 ### stdio (default — spawns the server automatically)
 
 ```bash
 npm run client:start
+```
+
+By default the client uses push delivery (`events/stream`). To use poll delivery instead:
+
+```bash
+npm run client:start:poll
 ```
 
 ### HTTP (connect to an already-running server)
@@ -120,6 +131,11 @@ Then run the client in another:
 npm run client:start:http
 # Connects to http://127.0.0.1:3000/mcp by default.
 # Set MCP_SERVER_URL to override.
+```
+
+Or with poll delivery:
+```bash
+npm run client:start:http:poll
 ```
 
 Requires AWS credentials configured for Bedrock access.

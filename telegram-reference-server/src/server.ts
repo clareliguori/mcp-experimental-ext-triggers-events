@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Telegram MCP Server — exposes Telegram Bot API operations as MCP tools
- * and inbound Telegram messages as MCP Events (push delivery).
+ * and inbound Telegram messages as MCP Events (push and poll delivery).
  *
  * Supports stdio (default) and HTTP (--http) transports.
  * Uses Grammy for Telegram Bot API interactions.
@@ -35,15 +35,59 @@ try {
 function getToken(): string {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
-    console.error("[server]","TELEGRAM_BOT_TOKEN env var is required");
+    console.error("[server]", "TELEGRAM_BOT_TOKEN env var is required");
     process.exit(1);
   }
   return token;
 }
 
+// ── Shared event types ────────────────────────────────────────────────
+
+interface TelegramEvent {
+  eventId: string;
+  name: string;
+  timestamp: string;
+  data: {
+    chat_id: string;
+    message_id: string;
+    user: string;
+    text: string;
+    ts: string;
+  };
+  cursor: string;
+}
+
+// ── Ring buffer for poll delivery ─────────────────────────────────────
+
+const MAX_BUFFER = 1000;
+const eventBuffer: TelegramEvent[] = [];
+let eventSeq = 0;
+
+function nextCursor(): string {
+  return String(++eventSeq);
+}
+
+function bufferEvent(event: TelegramEvent): void {
+  eventBuffer.push(event);
+  if (eventBuffer.length > MAX_BUFFER) {
+    eventBuffer.shift();
+  }
+}
+
+function eventsSince(cursor: string | null, maxEvents: number): { events: TelegramEvent[]; cursor: string } {
+  if (cursor === null) {
+    // "Start from now" — return no events, just the current cursor
+    return { events: [], cursor: String(eventSeq) };
+  }
+  const start = Number(cursor);
+  const matching = eventBuffer.filter((e) => Number(e.cursor) > start);
+  const batch = matching.slice(0, maxEvents);
+  const newCursor = batch.length > 0 ? batch[batch.length - 1].cursor : cursor;
+  return { events: batch, cursor: newCursor };
+}
+
 // ── Push event state ──────────────────────────────────────────────────
 
-// Helper to send custom notifications through the typed SDK
 function customNotification(
   method: string,
   params: Record<string, unknown>
@@ -59,11 +103,6 @@ interface ActiveSub {
 }
 
 const activeSubs = new Map<string, ActiveSub>();
-let eventSeq = 0;
-
-function nextCursor(): string {
-  return String(++eventSeq);
-}
 
 // ── Server factory ────────────────────────────────────────────────────
 
@@ -77,32 +116,67 @@ function createServer(bot: Bot): McpServer {
 
   const lowLevel = server.server;
 
+  const telegramMessageEvent = {
+    name: "telegram.message",
+    description: "Fires when a message is received by the Telegram bot",
+    delivery: ["push", "poll"],
+    payloadSchema: {
+      type: "object",
+      properties: {
+        chat_id: { type: "string" },
+        message_id: { type: "string" },
+        user: { type: "string" },
+        text: { type: "string" },
+        ts: { type: "string", format: "date-time" },
+      },
+    },
+  };
+
   // -- events/list -------------------------------------------------------
   lowLevel.setRequestHandler(
     z.object({
       method: z.literal("events/list"),
       params: z.optional(z.object({ cursor: z.optional(z.string()) })),
     }),
-    async () => ({
-      events: [
-        {
-          name: "telegram.message",
-          description:
-            "Fires when a message is received by the Telegram bot",
-          delivery: ["push"],
-          payloadSchema: {
-            type: "object",
-            properties: {
-              chat_id: { type: "string" },
-              message_id: { type: "string" },
-              user: { type: "string" },
-              text: { type: "string" },
-              ts: { type: "string", format: "date-time" },
-            },
-          },
-        },
-      ],
-    })
+    async () => ({ events: [telegramMessageEvent] })
+  );
+
+  // -- events/poll -------------------------------------------------------
+  lowLevel.setRequestHandler(
+    z.object({
+      method: z.literal("events/poll"),
+      params: z.object({
+        maxEvents: z.optional(z.number()),
+        subscriptions: z.array(
+          z.object({
+            id: z.string(),
+            name: z.string(),
+            params: z.optional(z.record(z.string(), z.unknown())),
+            cursor: z.nullable(z.string()),
+          })
+        ),
+      }),
+    }),
+    async (req) => {
+      const maxEvents = req.params.maxEvents ?? 50;
+      const results = req.params.subscriptions.map((sub) => {
+        if (sub.name !== "telegram.message") {
+          return {
+            id: sub.id,
+            error: { code: -32001, message: "EventNotFound" },
+          };
+        }
+        const { events, cursor } = eventsSince(sub.cursor, maxEvents);
+        return {
+          id: sub.id,
+          events,
+          cursor,
+          hasMore: false,
+          nextPollSeconds: 5,
+        };
+      });
+      return { results };
+    }
   );
 
   // -- events/stream (push delivery) ------------------------------------
@@ -150,7 +224,6 @@ function createServer(bot: Bot): McpServer {
         });
       }
 
-      // Keep stream open until cancelled/disconnected
       return new Promise<{ _meta: Record<string, never> }>((resolve) => {
         extra.signal.addEventListener("abort", () => {
           for (const sub of req.params.subscriptions) {
@@ -268,7 +341,7 @@ function createServer(bot: Bot): McpServer {
   return server;
 }
 
-// ── Grammy → push events ──────────────────────────────────────────────
+// ── Grammy → emit events (buffer + push) ──────────────────────────────
 
 function emitTelegramEvent(ctx: Context): void {
   const from = ctx.from;
@@ -276,22 +349,30 @@ function emitTelegramEvent(ctx: Context): void {
   const msg = ctx.message;
   if (!from || !chat || !msg) return;
 
-  const text = msg.text ?? msg.caption ?? "";
-  const user = from.username ?? String(from.id);
-  console.error("[server]",`Telegram message from ${user} in chat ${chat.id}: ${text}`);
-  console.error("[server]",`Active push subscriptions: ${activeSubs.size}`);
-
-  if (activeSubs.size === 0) return;
-
   const cursor = nextCursor();
-  const eventData = {
-    chat_id: String(chat.id),
-    message_id: String(msg.message_id),
-    user: from.username ?? String(from.id),
-    text: msg.text ?? msg.caption ?? "",
-    ts: new Date(msg.date * 1000).toISOString(),
+  const event: TelegramEvent = {
+    eventId: `evt_${cursor}`,
+    name: "telegram.message",
+    timestamp: new Date(msg.date * 1000).toISOString(),
+    data: {
+      chat_id: String(chat.id),
+      message_id: String(msg.message_id),
+      user: from.username ?? String(from.id),
+      text: msg.text ?? msg.caption ?? "",
+      ts: new Date(msg.date * 1000).toISOString(),
+    },
+    cursor,
   };
 
+  console.error(
+    "[server]",
+    `Telegram message from ${event.data.user} in chat ${chat.id}: ${event.data.text}`
+  );
+
+  // Store in ring buffer for poll delivery
+  bufferEvent(event);
+
+  // Push to active stream subscriptions
   for (const [, active] of activeSubs) {
     if (active.name !== "telegram.message") continue;
     active.cursor = cursor;
@@ -299,15 +380,15 @@ function emitTelegramEvent(ctx: Context): void {
       .notify(
         customNotification("notifications/events/event", {
           id: active.id,
-          eventId: `evt_${cursor}`,
-          name: "telegram.message",
-          timestamp: eventData.ts,
-          data: eventData,
-          cursor,
+          ...event,
         })
       )
       .catch((err) => {
-        console.error("[server]",`Failed to push event to sub ${active.id}:`, err);
+        console.error(
+          "[server]",
+          `Failed to push event to sub ${active.id}:`,
+          err
+        );
       });
   }
 }
@@ -319,13 +400,16 @@ async function main(): Promise<void> {
   const bot = new Bot(token);
   const useHttp = process.argv.includes("--http");
 
-  // Grammy message handlers → push events
   bot.on("message:text", (ctx) => emitTelegramEvent(ctx));
   bot.on("message:photo", (ctx) => emitTelegramEvent(ctx));
   bot.on("message:document", (ctx) => emitTelegramEvent(ctx));
 
   bot.catch((err) => {
-    console.error("[server]","Grammy handler error (polling continues):", err.error);
+    console.error(
+      "[server]",
+      "Grammy handler error (polling continues):",
+      err.error
+    );
   });
 
   if (useHttp) {
@@ -400,21 +484,25 @@ async function main(): Promise<void> {
     const server = createServer(bot);
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error("[server]","Telegram MCP server running on stdio");
+    console.error("[server]", "Telegram MCP server running on stdio");
   }
 
-  // Start Grammy polling for inbound Telegram messages
-  console.error("[server]","Starting Telegram bot polling...");
-  bot.start({
-    onStart: (info) => {
-      console.error("[server]",`Telegram bot polling as @${info.username}`);
-    },
-  }).catch((err) => {
-    console.error("[server]","Grammy bot.start() failed:", err);
-  });
+  console.error("[server]", "Starting Telegram bot polling...");
+  bot
+    .start({
+      onStart: (info) => {
+        console.error(
+          "[server]",
+          `Telegram bot polling as @${info.username}`
+        );
+      },
+    })
+    .catch((err) => {
+      console.error("[server]", "Grammy bot.start() failed:", err);
+    });
 }
 
 main().catch((err) => {
-  console.error("[server]","Fatal:", err);
+  console.error("[server]", "Fatal:", err);
   process.exit(1);
 });

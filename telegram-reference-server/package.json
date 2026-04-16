@@ -16,7 +16,9 @@
     "client:build": "cd client && npm run build",
     "client:lint": "cd client && npm run lint",
     "client:start": "cd client && node build/main.js",
-    "client:start:http": "cd client && node build/main.js --http"
+    "client:start:poll": "cd client && node build/main.js --poll",
+    "client:start:http": "cd client && node build/main.js --http",
+    "client:start:http:poll": "cd client && node build/main.js --http --poll"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
