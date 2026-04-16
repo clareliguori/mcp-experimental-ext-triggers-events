@@ -39,13 +39,13 @@ The server and client both auto-load the `.env` file. You can also set the env v
 ### Start stdio server (default)
 
 ```bash
-node dist/server.js
+npm start
 ```
 
 ### Start HTTP server
 
 ```bash
-node dist/server.js --http
+npm run start:http
 # Listens on http://127.0.0.1:3000/mcp
 # Set PORT env var to change the port.
 ```
@@ -209,7 +209,7 @@ npm run client:start:poll
 
 Start the server in one terminal:
 ```bash
-node dist/server.js --http
+npm run start:http
 ```
 
 Then run the client in another:
@@ -253,7 +253,7 @@ npm run client:start:webhook
 For HTTP transport with webhook delivery, start all three separately:
 ```bash
 # Terminal 1: MCP server
-node dist/server.js --http
+npm run start:http
 
 # Terminal 2: webhook receiver
 npm run webhook-receiver:start
