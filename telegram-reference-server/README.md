@@ -27,10 +27,11 @@ First, set `TELEGRAM_BOT_TOKEN` in an `.env` file:
 echo "TELEGRAM_BOT_TOKEN=123456789:AAHfiqksKZ8..." > .env
 ```
 
-For webhook delivery, also add `WEBHOOK_URL`:
+For webhook delivery, also add `WEBHOOK_URL` and `WEBHOOK_SECRET`:
 
 ```bash
 echo "WEBHOOK_URL=http://localhost:8080/hooks" >> .env
+echo "WEBHOOK_SECRET=$(openssl rand -base64 32)" >> .env
 ```
 
 The server and client both auto-load `.env` from the working directory (the client also checks the parent directory). You can also set the env var directly.
@@ -154,7 +155,7 @@ sequenceDiagram
     end
 ```
 
-### Subscription
+### Events subscription
 
 Clients subscribe via `events/stream` (push) or `events/poll` (poll). The server confirms push subscriptions with `notifications/events/active` and delivers events as `notifications/events/event` notifications. Poll clients call `events/poll` at the server-recommended interval.
 
@@ -234,6 +235,8 @@ Webhook mode uses three processes to simulate a production architecture:
 
 The webhook receiver and client share a SQLite database for storing and receiving incoming messages.
 In production, this could be a message queue or database (e.g., Amazon SQS, Kafka, Redis, PostgreSQL).
+
+The client passes `WEBHOOK_SECRET` to the server via `delivery.secret` in `events/subscribe`. The server uses it to sign POSTs; the webhook receiver uses it to verify signatures. Both read the same secret from `.env`.
 
 Start the webhook receiver (in its own terminal):
 ```bash

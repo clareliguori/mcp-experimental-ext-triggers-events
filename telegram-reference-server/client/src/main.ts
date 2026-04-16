@@ -155,6 +155,11 @@ async function main(): Promise<void> {
       console.error("WEBHOOK_URL env var is required for --webhook mode");
       process.exit(1);
     }
+    const webhookSecret = process.env.WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      console.error("WEBHOOK_SECRET env var is required for --webhook mode");
+      process.exit(1);
+    }
     console.log(`📡 Using webhook-based event delivery → ${webhookUrl}\n`);
 
     const SubscribeResultSchema = z.object({
@@ -174,7 +179,7 @@ async function main(): Promise<void> {
           params: {
             id: subId,
             name: "telegram.message",
-            delivery: { mode: "webhook", url: webhookUrl },
+            delivery: { mode: "webhook", url: webhookUrl, secret: webhookSecret },
             cursor: null,
           },
         } as never,
@@ -184,9 +189,6 @@ async function main(): Promise<void> {
     }
 
     const initial = await subscribe();
-    if (initial.secret) {
-      console.log(`🔑 Webhook secret: ${initial.secret}`);
-    }
     console.log(`⏰ Refresh before: ${initial.refreshBefore}`);
 
     // Refresh loop — re-subscribe at half the TTL

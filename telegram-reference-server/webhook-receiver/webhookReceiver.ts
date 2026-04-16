@@ -24,6 +24,10 @@ try {
 const port = parseInt(process.env.WEBHOOK_PORT ?? "8080", 10);
 const dbPath = process.env.WEBHOOK_DB ?? "./webhooks.db";
 const secret = process.env.WEBHOOK_SECRET;
+if (!secret) {
+  console.error("[webhook] WEBHOOK_SECRET env var is required");
+  process.exit(1);
+}
 
 const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
@@ -48,15 +52,19 @@ app.post("/hooks", (req, res) => {
   const ts = req.headers["x-mcp-timestamp"] as string | undefined;
   const sig = req.headers["x-mcp-signature"] as string | undefined;
 
-  if (secret && ts && sig) {
-    const expected = createHmac("sha256", secret)
-      .update(`${ts}.${body}`)
-      .digest("hex");
-    if (sig !== `sha256=${expected}`) {
-      console.error("[webhook] HMAC verification failed");
-      res.status(401).send("Invalid signature");
-      return;
-    }
+  if (!ts || !sig) {
+    console.error("[webhook] Missing signature headers");
+    res.status(401).send("Missing signature headers");
+    return;
+  }
+
+  const expected = createHmac("sha256", secret)
+    .update(`${ts}.${body}`)
+    .digest("hex");
+  if (sig !== `sha256=${expected}`) {
+    console.error("[webhook] HMAC verification failed");
+    res.status(401).send("Invalid signature");
+    return;
   }
 
   const eventId = req.body.eventId ?? `unknown_${Date.now()}`;
