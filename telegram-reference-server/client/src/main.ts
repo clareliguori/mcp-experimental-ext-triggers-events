@@ -1,4 +1,5 @@
 import { createInterface } from "node:readline";
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Agent, BedrockModel, McpClient } from "@strands-agents/sdk";
@@ -47,6 +48,7 @@ const PollResultSchema = z.object({
 async function main(): Promise<void> {
   const useHttp = process.argv.includes("--http");
   const usePoll = process.argv.includes("--poll");
+  const useWebhook = process.argv.includes("--webhook");
   const serverUrl = process.env.MCP_SERVER_URL ?? "http://127.0.0.1:3000/mcp";
 
   let transport: Transport;
@@ -141,6 +143,68 @@ async function main(): Promise<void> {
     // Cleanup on exit
     process.on("beforeExit", () => {
       polling = false;
+    });
+  } else if (useWebhook) {
+    // ── Webhook-based delivery ───────────────────────────────────────
+    const webhookUrl = process.env.WEBHOOK_URL;
+    if (!webhookUrl) {
+      console.error("WEBHOOK_URL env var is required for --webhook mode");
+      process.exit(1);
+    }
+    console.log(`📡 Using webhook-based event delivery → ${webhookUrl}\n`);
+
+    const SubscribeResultSchema = z.object({
+      id: z.string(),
+      secret: z.optional(z.string()),
+      cursor: z.string(),
+      refreshBefore: z.string(),
+    });
+
+    const subId = randomUUID();
+    let refreshing = true;
+
+    async function subscribe(): Promise<z.infer<typeof SubscribeResultSchema>> {
+      const result = await client.request(
+        {
+          method: "events/subscribe",
+          params: {
+            id: subId,
+            name: "telegram.message",
+            delivery: { mode: "webhook", url: webhookUrl },
+            cursor: null,
+          },
+        } as never,
+        SubscribeResultSchema as never
+      );
+      return result as z.infer<typeof SubscribeResultSchema>;
+    }
+
+    const initial = await subscribe();
+    if (initial.secret) {
+      console.log(`🔑 Webhook secret: ${initial.secret}`);
+    }
+    console.log(`⏰ Refresh before: ${initial.refreshBefore}`);
+
+    // Refresh loop — re-subscribe at half the TTL
+    (async () => {
+      while (refreshing) {
+        const refreshAt = new Date(initial.refreshBefore).getTime();
+        const waitMs = Math.max((refreshAt - Date.now()) / 2, 5000);
+        await new Promise((r) => setTimeout(r, waitMs));
+        if (!refreshing) break;
+        try {
+          const refreshed = await subscribe();
+          console.error(
+            `[webhook] Refreshed, next before: ${refreshed.refreshBefore}`
+          );
+        } catch (err) {
+          console.error("[webhook] Refresh failed:", err);
+        }
+      }
+    })();
+
+    process.on("beforeExit", () => {
+      refreshing = false;
     });
   } else {
     // ── Push-based delivery ──────────────────────────────────────────

@@ -28,6 +28,12 @@ First, set `TELEGRAM_BOT_TOKEN` in an `.env` file:
 echo "TELEGRAM_BOT_TOKEN=123456789:AAHfiqksKZ8..." > .env
 ```
 
+For webhook delivery, also add `WEBHOOK_URL`:
+
+```bash
+echo "WEBHOOK_URL=http://localhost:8080/hooks" >> .env
+```
+
 The server and client both auto-load `.env` from the working directory (the client also checks the parent directory). You can also set the env var directly.
 
 ### Start stdio server (default)
@@ -91,6 +97,8 @@ The server implements the MCP Events design sketch proposal with push delivery. 
 
 Clients subscribe via `events/stream` (push) or `events/poll` (poll). The server confirms push subscriptions with `notifications/events/active` and delivers events as `notifications/events/event` notifications. Poll clients call `events/poll` at the server-recommended interval.
 
+For webhook delivery, clients call `events/subscribe` with a callback URL. The server POSTs events with HMAC-SHA256 signatures (`X-MCP-Signature`, `X-MCP-Timestamp` headers). Subscriptions have a 1-minute TTL (for demo; set longer for production) and must be refreshed before `refreshBefore`.
+
 ## Client (Strands Agents SDK)
 
 A minimal interactive chatbot that connects to the server, subscribes to Telegram events, and routes both terminal input and inbound Telegram messages through a Bedrock-hosted LLM agent.
@@ -102,10 +110,10 @@ A minimal interactive chatbot that connects to the server, subscribes to Telegra
 npm run client:install && npm run client:build
 ```
 
-| | push (default) | poll (`--poll`) |
-|---|---|---|
-| **stdio** (default) | `npm run client:start` | `npm run client:start:poll` |
-| **HTTP** (`--http`) | `npm run client:start:http` | `npm run client:start:http:poll` |
+| | push (default) | poll (`--poll`) | webhook (`--webhook`) |
+|---|---|---|---|
+| **stdio** (default) | `npm run client:start` | `npm run client:start:poll` | `npm run client:start:webhook` |
+| **HTTP** (`--http`) | `npm run client:start:http` | `npm run client:start:http:poll` | `npm run client:start:http:webhook` |
 
 ### stdio (default — spawns the server automatically)
 

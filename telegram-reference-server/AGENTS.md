@@ -23,16 +23,17 @@ Telegram MCP Server — exposes Telegram Bot API operations as MCP tools and inb
 ### MCP Events (push delivery)
 - Implements the Events design sketch proposal (`docs/design-sketch-proposal.md` on `upstream/pja/design-sketch`).
 - Declares `events` capability via `extensions`.
-- Handles `events/list` — advertises `telegram.message` event with `delivery: ["push","poll"]`.
+- Handles `events/list` — advertises `telegram.message` event with `delivery: ["push","poll","webhook"]`.
 - Handles `events/stream` — accepts subscriptions, confirms with `notifications/events/active`, delivers events as `notifications/events/event` notifications.
 - Handles `events/poll` — returns events since cursor from a ring buffer (max 1000 events), with `nextPollSeconds: 5`.
+- Handles `events/subscribe` / `events/unsubscribe` — webhook delivery with HMAC-SHA256 signed POSTs, in-memory subscriptions with 1-minute TTL (for demo; set longer for production).
 - Grammy `bot.start()` polls Telegram for inbound messages; `bot.on("message:text" | "message:photo" | "message:document")` handlers emit push events to all active subscriptions.
 - Custom notification methods (`notifications/events/*`) are sent via `extra.sendNotification()` with type casting since the SDK doesn't have native events support yet.
 
 ### Client
 - Uses `@strands-agents/sdk` `Agent` with `BedrockModel` (Claude Sonnet) and `McpClient`.
 - Supports stdio (default, spawns server) and HTTP (`--http`, connects to running server).
-- Supports push (`events/stream`, default) and poll (`events/poll`, `--poll`) delivery.
+- Supports push (`events/stream`, default), poll (`events/poll`, `--poll`), and webhook (`events/subscribe`, `--webhook`) delivery.
 - Incoming Telegram messages are queued and fed into the agent loop on the next turn.
 - Terminal input and Telegram events are distinguished by a `[Telegram event]` prefix so the agent responds appropriately (direct text vs `reply` tool).
 - Interactive async REPL loop with Node `readline`.
@@ -55,6 +56,8 @@ npm run start:http           # HTTP on port 3000
 npm run client:install && npm run client:build && npm run client:lint
 npm run client:start         # stdio (spawns server)
 npm run client:start:poll    # stdio + poll delivery
+npm run client:start:webhook # stdio + webhook delivery (set WEBHOOK_URL)
 npm run client:start:http    # HTTP (connect to running server)
 npm run client:start:http:poll  # HTTP + poll delivery
+npm run client:start:http:webhook # HTTP + webhook delivery
 ```

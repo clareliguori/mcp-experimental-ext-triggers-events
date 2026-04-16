@@ -15,7 +15,7 @@ import {
   isInitializeRequest,
   type ServerNotification,
 } from "@modelcontextprotocol/sdk/types.js";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes, createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { Bot } from "grammy";
 import type { Context } from "grammy";
@@ -104,6 +104,70 @@ interface ActiveSub {
 
 const activeSubs = new Map<string, ActiveSub>();
 
+// ── Webhook subscription state ────────────────────────────────────────
+
+const WEBHOOK_TTL_MS = 60 * 1000; // 1 minute (demo)
+
+interface WebhookSub {
+  id: string;
+  name: string;
+  url: string;
+  secret: string;
+  cursor: string;
+  expiresAt: number;
+}
+
+// Keyed by (url, id) for unauthenticated servers per the spec
+const webhookSubs = new Map<string, WebhookSub>();
+
+function webhookKey(url: string, id: string): string {
+  return `${url}\0${id}`;
+}
+
+function pruneExpiredWebhooks(): void {
+  const now = Date.now();
+  for (const [key, sub] of webhookSubs) {
+    if (sub.expiresAt < now) {
+      console.error("[server]", `Webhook sub ${sub.id} expired`);
+      webhookSubs.delete(key);
+    }
+  }
+}
+
+async function deliverWebhook(sub: WebhookSub, event: TelegramEvent): Promise<void> {
+  const body = JSON.stringify({
+    id: sub.id,
+    eventId: event.eventId,
+    name: event.name,
+    timestamp: event.timestamp,
+    data: event.data,
+    cursor: event.cursor,
+  });
+  const ts = Math.floor(Date.now() / 1000).toString();
+  const sig = createHmac("sha256", sub.secret)
+    .update(`${ts}.${body}`)
+    .digest("hex");
+
+  try {
+    const res = await fetch(sub.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-MCP-Signature": `sha256=${sig}`,
+        "X-MCP-Timestamp": ts,
+      },
+      body,
+    });
+    if (res.ok) {
+      sub.cursor = event.cursor;
+    } else {
+      console.error("[server]", `Webhook delivery to ${sub.url} failed: ${res.status}`);
+    }
+  } catch (err) {
+    console.error("[server]", `Webhook delivery to ${sub.url} error:`, err);
+  }
+}
+
 // ── Server factory ────────────────────────────────────────────────────
 
 function createServer(bot: Bot): McpServer {
@@ -119,7 +183,7 @@ function createServer(bot: Bot): McpServer {
   const telegramMessageEvent = {
     name: "telegram.message",
     description: "Fires when a message is received by the Telegram bot",
-    delivery: ["push", "poll"],
+    delivery: ["push", "poll", "webhook"],
     payloadSchema: {
       type: "object",
       properties: {
@@ -232,6 +296,83 @@ function createServer(bot: Bot): McpServer {
           resolve({ _meta: {} });
         });
       });
+    }
+  );
+
+  // -- events/subscribe (webhook delivery) --------------------------------
+  lowLevel.setRequestHandler(
+    z.object({
+      method: z.literal("events/subscribe"),
+      params: z.object({
+        id: z.string(),
+        name: z.string(),
+        params: z.optional(z.record(z.string(), z.unknown())),
+        delivery: z.object({
+          mode: z.literal("webhook"),
+          url: z.string(),
+          secret: z.optional(z.string()),
+        }),
+        cursor: z.nullable(z.string()),
+      }),
+    }),
+    async (req) => {
+      pruneExpiredWebhooks();
+      const { id, name, delivery, cursor } = req.params;
+
+      if (name !== "telegram.message") {
+        throw new Error("EventNotFound");
+      }
+
+      const key = webhookKey(delivery.url, id);
+      const existing = webhookSubs.get(key);
+
+      if (existing) {
+        // Refresh: reset TTL, update mutable fields
+        existing.name = name;
+        existing.expiresAt = Date.now() + WEBHOOK_TTL_MS;
+        if (cursor !== null) existing.cursor = cursor;
+        if (delivery.secret) existing.secret = delivery.secret;
+        const refreshBefore = new Date(existing.expiresAt).toISOString();
+        return { id, cursor: existing.cursor, refreshBefore };
+      }
+
+      // New subscription
+      const secret = delivery.secret ?? `whsec_${randomBytes(24).toString("base64url")}`;
+      const sub: WebhookSub = {
+        id,
+        name,
+        url: delivery.url,
+        secret,
+        cursor: cursor ?? String(eventSeq),
+        expiresAt: Date.now() + WEBHOOK_TTL_MS,
+      };
+      webhookSubs.set(key, sub);
+      console.error("[server]", `Webhook subscription created: ${id} → ${delivery.url}`);
+
+      const refreshBefore = new Date(sub.expiresAt).toISOString();
+      return { id, secret, cursor: sub.cursor, refreshBefore };
+    }
+  );
+
+  // -- events/unsubscribe (webhook delivery) ------------------------------
+  lowLevel.setRequestHandler(
+    z.object({
+      method: z.literal("events/unsubscribe"),
+      params: z.object({
+        id: z.string(),
+        delivery: z.optional(z.object({ url: z.string() })),
+      }),
+    }),
+    async (req) => {
+      const { id, delivery } = req.params;
+      // Unauthenticated: need delivery.url to form the key
+      if (!delivery?.url) {
+        throw new Error("delivery.url required for unauthenticated servers");
+      }
+      const key = webhookKey(delivery.url, id);
+      const deleted = webhookSubs.delete(key);
+      console.error("[server]", `Webhook unsubscribe ${id}: ${deleted ? "removed" : "not found"}`);
+      return {};
     }
   );
 
@@ -390,6 +531,13 @@ function emitTelegramEvent(ctx: Context): void {
           err
         );
       });
+  }
+
+  // Deliver to webhook subscriptions
+  pruneExpiredWebhooks();
+  for (const [, sub] of webhookSubs) {
+    if (sub.name !== "telegram.message") continue;
+    deliverWebhook(sub, event).catch(() => {});
   }
 }
 
